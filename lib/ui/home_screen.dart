@@ -178,10 +178,12 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          fallbackUrl: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.pointgps.location',
           maxNativeZoom: 19,
           keepBuffer: 2,
           panBuffer: 1,
+          evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
         ),
         if (e != null)
           CircleLayer(

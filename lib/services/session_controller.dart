@@ -130,15 +130,7 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> _begin() async {
-    final ok = await _service.start();
-    if (!ok) {
-      _caps = await _service.capabilities();
-      _phase = !_caps!.hasFinePermission ? SessionPhase.needPermission : SessionPhase.gpsOff;
-      notifyListeners();
-      return;
-    }
-    _phase = SessionPhase.acquiring;
-    _startedAt = DateTime.now();
+    // نشترك قبل start() حتى تكون الـsinks الأصلية جاهزة قبل أول حدث.
     _fixSub ??= _service.fixes.listen(_onFix);
     _skySub ??= _service.sky.listen(_onSky);
     _ttffSub ??= _service.firstFixMs.listen((ms) {
@@ -150,6 +142,15 @@ final class SessionController extends ChangeNotifier {
       _phase = SessionPhase.gpsOff;
       notifyListeners();
     });
+    final ok = await _service.start();
+    if (!ok) {
+      _caps = await _service.capabilities();
+      _phase = !_caps!.hasFinePermission ? SessionPhase.needPermission : SessionPhase.gpsOff;
+      notifyListeners();
+      return;
+    }
+    _phase = SessionPhase.acquiring;
+    _startedAt = DateTime.now();
     _armStaleTimer();
     notifyListeners();
   }

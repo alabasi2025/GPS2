@@ -141,6 +141,12 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
         locationManager.requestLocationUpdates(
             LocationManager.GPS_PROVIDER, 0L, 0f, locationListener, Looper.getMainLooper(),
         )
+        // آخر حل معروف فوراً (حتى لا تبقى الشاشة فارغة حتى أول حل جديد).
+        locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { last ->
+            if (System.currentTimeMillis() - last.time < 120_000L) {
+                mainHandler.post { fixSink?.success(last.toMap().plus("stale" to true)) }
+            }
+        }
         locationManager.registerGnssStatusCallback(statusCallback, mainHandler)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             locationManager.registerGnssMeasurementsCallback(measurementsCallback, mainHandler)

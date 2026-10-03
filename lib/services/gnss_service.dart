@@ -82,19 +82,18 @@ final class GnssService {
   Stream<RawSummary>? _raw;
   Stream<Map<Object?, Object?>>? _statusEvents;
 
+  Stream<Map<Object?, Object?>>? _fixEvents;
+
+  // قناة واحدة مشتركة: الاشتراك مرتين في EventChannel يجعل آخر مشترك يحجب
+  // الأول على الجانب الأصلي (onListen يستبدل الـsink).
+  Stream<Map<Object?, Object?>> get _fixRaw => _fixEvents ??=
+      _fixChannel.receiveBroadcastStream().map((e) => e as Map<Object?, Object?>).asBroadcastStream();
+
   /// حلول الموقع الخام من GPS_PROVIDER.
-  Stream<GnssFix> get fixes => _fixes ??= _fixChannel
-      .receiveBroadcastStream()
-      .map((e) => e as Map<Object?, Object?>)
-      .where((m) => m['lat'] != null)
-      .map(GnssFix.fromMap);
+  Stream<GnssFix> get fixes => _fixes ??= _fixRaw.where((m) => m['lat'] != null).map(GnssFix.fromMap);
 
   /// حدث تعطيل مزوّد GPS أثناء التشغيل.
-  Stream<void> get providerDisabled => _fixChannel
-      .receiveBroadcastStream()
-      .map((e) => e as Map<Object?, Object?>)
-      .where((m) => m['event'] == 'providerDisabled')
-      .map((_) {});
+  Stream<void> get providerDisabled => _fixRaw.where((m) => m['event'] == 'providerDisabled').map((_) {});
 
   Stream<Map<Object?, Object?>> get _status => _statusEvents ??=
       _statusChannel.receiveBroadcastStream().map((e) => e as Map<Object?, Object?>).asBroadcastStream();
