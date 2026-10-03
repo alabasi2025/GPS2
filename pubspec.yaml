@@ -1,7 +1,7 @@
 name: point_gps
 description: "نقطة — تحديد الموقع بأعلى دقة ممكنة من الهاتف (GNSS خام، L1+L5، Kalman، تجميع ثابت)."
 publish_to: 'none'
-version: 1.1.0+3
+version: 1.2.0+4
 
 environment:
   sdk: ^3.9.0

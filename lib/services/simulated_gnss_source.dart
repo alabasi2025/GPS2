@@ -55,6 +55,9 @@ final class SimulatedGnssSource implements GnssSource {
   Future<void> stop() async => _timer?.cancel();
 
   @override
+  Future<void> refresh() async => _tick();
+
+  @override
   Future<GnssCapabilities> capabilities() async => const GnssCapabilities(
         sdk: 34,
         model: 'محاكاة (معاينة ويب)',

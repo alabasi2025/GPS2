@@ -12,7 +12,12 @@ import 'csv_logger.dart';
 import 'gnss_service.dart';
 
 /// حالة الواجهة العامة.
-enum SessionPhase { idle, needPermission, permissionDeniedForever, gpsOff, acquiring, tracking }
+enum SessionPhase { idle, needPermission, permissionDeniedForever, gpsOff, acquiring, tracking, locked }
+
+/// نمط العمل.
+/// - [quick]: للميدان — يعرض فوراً، يحسّن حتى 10 ث أو حتى تصل الدقة للهدف، ثم يثبّت ويوقف المستشعرات.
+/// - [precision]: مستمر — تجميع ثابت طويل لأقصى دقة (للمسح/الاختبار).
+enum SessionMode { quick, precision }
 
 /// نقطة مثبّتة يدوياً من المستخدم (لاختبار التكرارية / القياس بالشريط).
 final class SavedPoint {
@@ -58,6 +63,15 @@ final class SessionController extends ChangeNotifier {
   Timer? _staleTimer;
 
   SessionPhase _phase = SessionPhase.idle;
+  SessionMode _mode = SessionMode.quick;
+  Timer? _quickTimer;
+  DateTime? _quickStartedAt;
+  DisplaySolution? _best; // أفضل حل خلال نافذة الوضع السريع
+
+  /// الوضع السريع: نثبّت مبكراً عند بلوغ هذه الدقة (σ بالمتر).
+  static const double quickTargetSigmaM = 5.0; // 95% ≈ 10 م — كافٍ للميدان
+  static const Duration quickWindow = Duration(seconds: 10);
+  static const Duration quickMinWindow = Duration(seconds: 3);
   GnssCapabilities? _caps;
   GnssFix? _lastFix;
   PositionEstimate? _estimate;
@@ -74,6 +88,16 @@ final class SessionController extends ChangeNotifier {
   DateTime? _startedAt;
 
   SessionPhase get phase => _phase;
+  SessionMode get mode => _mode;
+  bool get isLocked => _phase == SessionPhase.locked;
+
+  /// الزمن المتبقي في نافذة الوضع السريع (للعدّاد في الواجهة).
+  Duration get quickRemaining {
+    final st = _quickStartedAt;
+    if (st == null || _phase == SessionPhase.locked) return Duration.zero;
+    final r = quickWindow - DateTime.now().difference(st);
+    return r.isNegative ? Duration.zero : r;
+  }
   GnssCapabilities? get capabilities => _caps;
   GnssFix? get lastFix => _lastFix;
   /// تقدير GNSS المُرشَّح (قد يكون مضلَّلاً داخل المباني).
@@ -163,7 +187,71 @@ final class SessionController extends ChangeNotifier {
     }
     _phase = SessionPhase.acquiring;
     _startedAt = DateTime.now();
+    _best = null;
     _armStaleTimer();
+    if (_mode == SessionMode.quick) _armQuickWindow();
+    notifyListeners();
+  }
+
+  void _armQuickWindow() {
+    _quickTimer?.cancel();
+    _quickStartedAt = DateTime.now();
+    _quickTimer = Timer(quickWindow, _lockQuick);
+  }
+
+  /// يثبّت أفضل حل ويوقف المستشعرات (بطارية + وضوح للعامل).
+  Future<void> _lockQuick() async {
+    _quickTimer?.cancel();
+    if (_best == null && _solution == null) {
+      // لا شيء بعد — نمدّد 5 ث أخرى بدل التثبيت على فراغ.
+      _quickTimer = Timer(const Duration(seconds: 5), _lockQuick);
+      notifyListeners();
+      return;
+    }
+    _solution = _best ?? _solution;
+    _phase = SessionPhase.locked;
+    _staleTimer?.cancel();
+    _stale = false;
+    await _service.stop();
+    notifyListeners();
+  }
+
+  /// «حدّث»: دورة سريعة جديدة من هذه اللحظة.
+  Future<void> refresh() async {
+    _quickTimer?.cancel();
+    _best = null;
+    _estimator.reset();
+    _arbiter.reset();
+    _estimate = null;
+    _session++;
+    _startedAt = DateTime.now();
+    if (_phase == SessionPhase.locked || _phase == SessionPhase.idle) {
+      final ok = await _service.start();
+      if (!ok) {
+        await init();
+        return;
+      }
+    }
+    _phase = SessionPhase.acquiring;
+    await _service.refresh();
+    _armStaleTimer();
+    if (_mode == SessionMode.quick) _armQuickWindow();
+    notifyListeners();
+  }
+
+  Future<void> setMode(SessionMode m) async {
+    if (m == _mode) return;
+    _mode = m;
+    _quickTimer?.cancel();
+    if (m == SessionMode.precision) {
+      if (_phase == SessionPhase.locked) {
+        await _service.start();
+        _phase = SessionPhase.tracking;
+        _armStaleTimer();
+      }
+    } else {
+      if (_phase == SessionPhase.tracking || _phase == SessionPhase.acquiring) _armQuickWindow();
+    }
     notifyListeners();
   }
 
@@ -178,6 +266,7 @@ final class SessionController extends ChangeNotifier {
   // ----------------------------------------------------------------- أحداث
 
   void _onFix(GnssFix fix) {
+    if (_phase == SessionPhase.locked) return; // مثبَّت: نتجاهل أي بقايا
     if (fix.source == FixSource.assist) {
       _lastAssist = fix;
       _assistCount++;
@@ -202,6 +291,17 @@ final class SessionController extends ChangeNotifier {
 
   void _rearbitrate(int nowMs) {
     _solution = _arbiter.decide(estimate: _estimate, usedSatellites: _sky.usedInFix, nowMs: nowMs);
+    final sol = _solution;
+    if (sol == null || _mode != SessionMode.quick) return;
+    // نحتفظ بالأدق خلال النافذة.
+    if (_best == null || sol.sigmaM <= _best!.sigmaM) _best = sol;
+    // تثبيت مبكر: بلغنا الهدف وبعد حد أدنى من الزمن (حتى لا نثبّت على آخر-موقع-معروف قديم).
+    final st = _quickStartedAt;
+    if (st != null &&
+        _best!.sigmaM <= quickTargetSigmaM &&
+        DateTime.now().difference(st) >= quickMinWindow) {
+      unawaited(_lockQuick());
+    }
   }
 
   void _onSky(SkySnapshot sky) {
@@ -215,8 +315,12 @@ final class SessionController extends ChangeNotifier {
 
   // ----------------------------------------------------------- أوامر المستخدم
 
-  /// يعيد ضبط المحرك ويبدأ جلسة تجميع جديدة (للتكرارية).
+  /// يعيد ضبط المحرك ويبدأ جلسة تجميع جديدة (للتكرارية في وضع الدقة).
   void resetEstimator() {
+    if (_mode == SessionMode.quick) {
+      unawaited(refresh());
+      return;
+    }
     _estimator.reset();
     _arbiter.reset();
     _estimate = null;
@@ -290,6 +394,7 @@ final class SessionController extends ChangeNotifier {
   @override
   Future<void> dispose() async {
     _staleTimer?.cancel();
+    _quickTimer?.cancel();
     await _fixSub?.cancel();
     await _skySub?.cancel();
     await _ttffSub?.cancel();

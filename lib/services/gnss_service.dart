@@ -71,6 +71,9 @@ abstract interface class GnssSource {
   Stream<RawSummary> get raw;
   Future<bool> start();
   Future<void> stop();
+
+  /// حل واحد طازج فوراً (بدون انتظار دورة كاملة).
+  Future<void> refresh();
   Future<GnssCapabilities> capabilities();
   Future<PermissionStatus> requestPermission();
   Future<void> openLocationSettings();
@@ -140,6 +143,9 @@ final class GnssService implements GnssSource {
 
   @override
   Future<void> stop() => _control.invokeMethod<void>('stop');
+
+  @override
+  Future<void> refresh() => _control.invokeMethod<void>('refresh');
 
   @override
   Future<GnssCapabilities> capabilities() async {

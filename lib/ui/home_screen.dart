@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _follow = true;
   bool _mapReady = false;
   double _zoom = 18;
+  Timer? _tick;
 
   SessionController get c => widget.controller;
 
@@ -35,10 +38,14 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     c.addListener(_onUpdate);
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && c.mode == SessionMode.quick && !c.isLocked) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _tick?.cancel();
     c.removeListener(_onUpdate);
     _map.dispose();
     super.dispose();
@@ -161,7 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 _buildTopBar(),
                 const Spacer(),
-                if (phase == SessionPhase.acquiring || phase == SessionPhase.tracking) _buildBottomPanel(),
+                if (phase == SessionPhase.acquiring || phase == SessionPhase.tracking || phase == SessionPhase.locked)
+                  _buildBottomPanel(),
               ],
             ),
           ),
@@ -283,28 +291,36 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          if (e != null)
-            GlassPill(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    e.motion == MotionState.stationary ? Icons.adjust_rounded : Icons.directions_walk_rounded,
-                    size: 18,
-                    color: e.motion == MotionState.stationary ? AppTheme.good : AppTheme.accent,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    switch (e.motion) {
-                      MotionState.stationary => 'ثابت · ${Fmt.duration(c.elapsed)}',
-                      MotionState.moving => 'متحرك',
-                      MotionState.unknown => 'جارٍ التحليل',
-                    },
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
+          GlassPill(
+            onTap: () => c.setMode(c.mode == SessionMode.quick ? SessionMode.precision : SessionMode.quick),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  c.isLocked
+                      ? Icons.lock_rounded
+                      : (c.mode == SessionMode.quick ? Icons.bolt_rounded : Icons.adjust_rounded),
+                  size: 18,
+                  color: c.isLocked ? AppTheme.good : (c.mode == SessionMode.quick ? AppTheme.warn : AppTheme.accent),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  c.isLocked
+                      ? 'مثبَّت'
+                      : c.mode == SessionMode.quick
+                          ? 'سريع · ${c.quickRemaining.inSeconds} ث'
+                          : (e == null
+                              ? 'دقة قصوى'
+                              : switch (e.motion) {
+                                  MotionState.stationary => 'ثابت · ${Fmt.duration(c.elapsed)}',
+                                  MotionState.moving => 'متحرك',
+                                  MotionState.unknown => 'دقة قصوى',
+                                }),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
             ),
+          ),
           const Spacer(),
           IconButton(
             tooltip: _follow ? 'التتبع مفعّل' : 'العودة لموقعي',
@@ -359,18 +375,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 Expanded(
                   flex: 3,
                   child: FilledButton.icon(
-                    onPressed: _share,
-                    icon: const Icon(Icons.share_rounded, size: 20),
-                    label: const Text('مشاركة'),
+                    onPressed: c.isLocked || c.mode == SessionMode.precision ? c.refresh : null,
+                    icon: Icon(c.isLocked ? Icons.my_location_rounded : Icons.hourglass_top_rounded, size: 20),
+                    label: Text(c.isLocked ? 'حدّث الموقع' : 'جارٍ التحديد…'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: c.isLocked ? AppTheme.accent : AppTheme.surfaceHi,
+                      foregroundColor: c.isLocked ? AppTheme.bg : AppTheme.textHi,
+                      disabledBackgroundColor: AppTheme.surfaceHi,
+                      disabledForegroundColor: AppTheme.textHi,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   flex: 2,
-                  child: OutlinedButton.icon(
-                    onPressed: _openInMaps,
-                    icon: const Icon(Icons.map_rounded, size: 20),
-                    label: const Text('الخرائط'),
+                  child: FilledButton.icon(
+                    onPressed: _share,
+                    icon: const Icon(Icons.share_rounded, size: 20),
+                    label: const Text('مشاركة'),
+                    style: FilledButton.styleFrom(backgroundColor: AppTheme.good, foregroundColor: AppTheme.bg),
                   ),
                 ),
               ],
@@ -385,14 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: c.isLogging ? AppTheme.bad : null,
                   onTap: _toggleLog,
                 ),
-                _MiniAction(
-                  icon: Icons.restart_alt_rounded,
-                  label: 'إعادة ضبط',
-                  onTap: () {
-                    c.resetEstimator();
-                    _toast('جلسة جديدة #${c.session}');
-                  },
-                ),
+                _MiniAction(icon: Icons.map_rounded, label: 'الخرائط', onTap: _openInMaps),
                 _MiniAction(icon: Icons.science_rounded, label: 'التحليل', onTap: _showSky),
               ],
             ),
@@ -471,7 +487,7 @@ class _AcquiringRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('جارٍ البحث عن الأقمار…', style: Theme.of(context).textTheme.titleMedium),
+              Text('جارٍ تحديد الموقع…', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 2),
               Text(
                 sky.visible == 0

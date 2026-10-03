@@ -76,6 +76,7 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
             when (call.method) {
                 "start" -> result.success(start())
                 "stop" -> { stop(); result.success(null) }
+                "refresh" -> { refreshNow(); result.success(null) }
                 "capabilities" -> result.success(capabilities())
                 "requestPermission" -> requestPermission(result)
                 "openLocationSettings" -> {
@@ -215,6 +216,19 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
         override fun onProviderEnabled(provider: String) = Unit
         override fun onProviderDisabled(provider: String) {
             fixSink?.success(mapOf("event" to "providerDisabled"))
+        }
+    }
+
+    /** حل واحد طازج عالي الدقة الآن (لزر «حدّث» ولحظة الالتقاط). */
+    @SuppressLint("MissingPermission")
+    private fun refreshNow() {
+        if (!hasFineLocation()) return
+        val client = fusedClient ?: run {
+            if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) != ConnectionResult.SUCCESS) return
+            LocationServices.getFusedLocationProviderClient(context)
+        }
+        client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener { loc ->
+            if (loc != null) fixSink?.success(loc.toMap().plus("source" to "assist"))
         }
     }
 

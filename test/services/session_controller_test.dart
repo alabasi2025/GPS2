@@ -77,6 +77,7 @@ void main() {
 
   test('init → start called → fused shown immediately, GNSS fixes reach the engine', () async {
     final c = SessionController(service: GnssService());
+    await c.setMode(SessionMode.precision);
     var notifications = 0;
     c.addListener(() => notifications++);
     await c.init();
@@ -108,6 +109,7 @@ void main() {
 
   test('indoors: GNSS 200 m away from fused → fused is what the user sees', () async {
     final c = SessionController(service: GnssService());
+    await c.setMode(SessionMode.precision);
     await c.init();
     await pump();
     statusCtl.add(sky(7));
@@ -124,6 +126,7 @@ void main() {
 
   test('providerDisabled on the same channel does not swallow fixes', () async {
     final c = SessionController(service: GnssService());
+    await c.setMode(SessionMode.precision);
     await c.init();
     await pump();
     fixCtl.add(gnss(15.0, 44.0));
@@ -148,5 +151,74 @@ void main() {
     expect(c.phase, SessionPhase.needPermission);
     expect(startCalls, isNot(contains('start')));
     await c.dispose();
+  });
+
+  group('quick mode (field use)', () {
+    test('shows last-known fused immediately, locks early once σ ≤ 5 m after 3 s, then stops sensors', () async {
+      final c = SessionController(service: GnssService());
+      await c.init();
+      await pump();
+      expect(c.mode, SessionMode.quick);
+
+      fixCtl.add(assist(15.0, 44.0, acc: 20));
+      await pump();
+      expect(c.solution, isNotNull, reason: 'first display must be instant');
+      expect(c.isLocked, isFalse);
+
+      // حلول أدق تصل
+      statusCtl.add(sky(10));
+      fixCtl.add(assist(15.0, 44.0, acc: 6));
+      await pump();
+      expect(c.isLocked, isFalse, reason: 'must not lock before the 3 s minimum window');
+
+      await Future<void>.delayed(const Duration(seconds: 3));
+      fixCtl.add(assist(15.0, 44.0, acc: 5));
+      await pump();
+      expect(c.isLocked, isTrue, reason: 'σ=5 → 95%≈10 m is good enough for field use');
+      expect(startCalls, contains('stop'));
+      final lockedLat = c.solution!.lat;
+
+      // بيانات بعد التثبيت تُتجاهل
+      fixCtl.add(assist(15.5, 44.5, acc: 3));
+      await pump();
+      expect(c.solution!.lat, lockedLat);
+      await c.dispose();
+    });
+
+    test('locks at the 10 s deadline on the BEST (smallest σ) solution seen', () async {
+      final c = SessionController(service: GnssService());
+      await c.init();
+      await pump();
+      fixCtl.add(assist(15.0, 44.0, acc: 30));
+      await pump();
+      fixCtl.add(assist(15.0001, 44.0, acc: 12)); // أفضل
+      await pump();
+      fixCtl.add(assist(15.0002, 44.0, acc: 25)); // أسوأ لاحقاً
+      await pump();
+      expect(c.isLocked, isFalse);
+      await Future<void>.delayed(const Duration(seconds: 10, milliseconds: 300));
+      expect(c.isLocked, isTrue);
+      expect(c.solution!.sigmaM, 12);
+      expect((c.solution!.lat - 15.0001).abs(), lessThan(1e-9));
+      await c.dispose();
+    });
+
+    test('refresh restarts sensors and a new window', () async {
+      final c = SessionController(service: GnssService());
+      await c.init();
+      await pump();
+      fixCtl.add(assist(15.0, 44.0, acc: 30));
+      await Future<void>.delayed(const Duration(seconds: 10, milliseconds: 300));
+      expect(c.isLocked, isTrue);
+      startCalls.clear();
+      await c.refresh();
+      await pump();
+      expect(c.isLocked, isFalse);
+      expect(startCalls, containsAll(['start', 'refresh']));
+      fixCtl.add(assist(15.1, 44.1, acc: 30));
+      await pump();
+      expect((c.solution!.lat - 15.1).abs(), lessThan(1e-9));
+      await c.dispose();
+    });
   });
 }
