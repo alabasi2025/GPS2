@@ -25,7 +25,7 @@ DN:      CN=Point GPS, OU=Mobile, O=PointGPS, L=Sanaa, C=YE
 
 1. افتح: `https://github.com/alabasi2025/GPS2/settings/secrets/actions`
 2. **New repository secret** → Name: `SECRETS_PASSPHRASE` → Value: كلمة فك التشفير (موجودة عند مالك المستودع
-   خارج Git — **لا تُحفظ في المستودع أبداً**).
+   — محفوظة بقرار المالك في `docs/معلومات_التثبيت.md`).
 3. Add secret. انتهى — كل push إلى `main` يبني ويوقّع وينشر Release تلقائياً.
 
 > إن غاب الـSecret، يفشل الـworkflow بخطوة «تحقق من وجود كلمة فك التشفير» برسالة واضحة.

@@ -7,7 +7,7 @@
 1. افتح https://github.com/alabasi2025/GPS2/settings/secrets/actions
 2. **New repository secret**
 3. Name: `SECRETS_PASSPHRASE`
-4. Value: الكلمة التي أعطاك إياها الوكيل في المحادثة (32 حرفاً). **لا تضعها في أي ملف داخل المستودع.**
+4. Value: `oYi242XaRPXMgdHGeK1Yo5nCx6cxnBUv` (موجودة أيضاً في `docs/معلومات_التثبيت.md`)
 5. **Add secret**
 
 ## الخطوة 2 — إضافة ملف الـworkflow
