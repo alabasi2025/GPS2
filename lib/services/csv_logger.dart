@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../engine/models.dart';
+import '../engine/solution_arbiter.dart';
 
 /// سجل CSV لكل عينة — أساس المنهجية العلمية للاختبار:
 /// يمكن مقارنة الخام مقابل المُرشَّح، وحساب تكرارية الجلسات، والتحقق من
@@ -15,7 +16,8 @@ final class CsvLogger {
   static const header =
       'time_ms,lat_raw,lon_raw,alt_raw,acc_raw_m,speed_mps,bearing_deg,'
       'lat_est,lon_est,alt_est,sigma_m,radius95_m,motion,samples_avg,'
-      'rejected,sats_visible,sats_used,l5_used,mean_cn0,session';
+      'rejected,sats_visible,sats_used,l5_used,mean_cn0,session,'
+      'shown_lat,shown_lon,shown_sigma_m,shown_source,shown_reason';
 
   final int flushEvery;
   final StringBuffer _buf = StringBuffer();
@@ -47,6 +49,7 @@ final class CsvLogger {
     required PositionEstimate est,
     required SkySnapshot sky,
     required int session,
+    DisplaySolution? solution,
   }) {
     final s = _sink;
     if (s == null) return;
@@ -90,6 +93,16 @@ final class CsvLogger {
       ..write(sky.meanCn0Used.toStringAsFixed(1))
       ..write(',')
       ..write(session)
+      ..write(',')
+      ..write(solution == null ? '' : solution.lat.toStringAsFixed(8))
+      ..write(',')
+      ..write(solution == null ? '' : solution.lon.toStringAsFixed(8))
+      ..write(',')
+      ..write(solution == null ? '' : solution.sigmaM.toStringAsFixed(2))
+      ..write(',')
+      ..write(solution?.source.name ?? '')
+      ..write(',')
+      ..write(solution?.reason.name ?? '')
       ..write('\n');
     _pending++;
     _lines++;

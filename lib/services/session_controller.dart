@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../engine/geo_math.dart';
 import '../engine/models.dart';
 import '../engine/position_estimator.dart';
+import '../engine/solution_arbiter.dart';
 import 'csv_logger.dart';
 import 'gnss_service.dart';
 
@@ -39,12 +40,14 @@ final class SavedPoint {
 /// `notifyListeners` يُستدعى مرة واحدة لكل حل (1 Hz) — لا إعادة بناء عند
 /// كل تحديث أقمار (قد تصل 10 Hz) إلا إذا تغيّر العدد المستخدم.
 final class SessionController extends ChangeNotifier {
-  SessionController({GnssService? service, PositionEstimator? estimator})
+  SessionController({GnssService? service, PositionEstimator? estimator, SolutionArbiter? arbiter})
       : _service = service ?? GnssService(),
-        _estimator = estimator ?? PositionEstimator();
+        _estimator = estimator ?? PositionEstimator(),
+        _arbiter = arbiter ?? SolutionArbiter();
 
   final GnssService _service;
   final PositionEstimator _estimator;
+  final SolutionArbiter _arbiter;
   final CsvLogger _logger = CsvLogger();
 
   StreamSubscription<GnssFix>? _fixSub;
@@ -58,6 +61,9 @@ final class SessionController extends ChangeNotifier {
   GnssCapabilities? _caps;
   GnssFix? _lastFix;
   PositionEstimate? _estimate;
+  DisplaySolution? _solution;
+  GnssFix? _lastAssist;
+  int _assistCount = 0;
   SkySnapshot _sky = SkySnapshot.empty;
   RawSummary? _raw;
   int? _ttffMs;
@@ -70,7 +76,13 @@ final class SessionController extends ChangeNotifier {
   SessionPhase get phase => _phase;
   GnssCapabilities? get capabilities => _caps;
   GnssFix? get lastFix => _lastFix;
+  /// تقدير GNSS المُرشَّح (قد يكون مضلَّلاً داخل المباني).
   PositionEstimate? get estimate => _estimate;
+
+  /// **الحل المعروض** بعد التحكيم بين GNSS والمدمج — هذا ما يراه المستخدم ويشاركه.
+  DisplaySolution? get solution => _solution;
+  GnssFix? get lastAssist => _lastAssist;
+  int get assistCount => _assistCount;
   SkySnapshot get sky => _sky;
   RawSummary? get raw => _raw;
   int? get ttffMs => _ttffMs;
@@ -166,16 +178,30 @@ final class SessionController extends ChangeNotifier {
   // ----------------------------------------------------------------- أحداث
 
   void _onFix(GnssFix fix) {
+    if (fix.source == FixSource.assist) {
+      _lastAssist = fix;
+      _assistCount++;
+      _arbiter.updateAssist(fix);
+      _rearbitrate(fix.timeMs);
+      if (_phase == SessionPhase.acquiring && _solution != null) _phase = SessionPhase.tracking;
+      notifyListeners();
+      return;
+    }
     _lastFix = fix;
     _fixCount++;
     _stale = false;
     _armStaleTimer();
     _estimate = _estimator.update(fix);
+    _rearbitrate(fix.timeMs);
     if (_phase == SessionPhase.acquiring) _phase = SessionPhase.tracking;
     if (_logger.isActive) {
-      _logger.write(fix: fix, est: _estimate!, sky: _sky, session: _session);
+      _logger.write(fix: fix, est: _estimate!, sky: _sky, session: _session, solution: _solution);
     }
     notifyListeners();
+  }
+
+  void _rearbitrate(int nowMs) {
+    _solution = _arbiter.decide(estimate: _estimate, usedSatellites: _sky.usedInFix, nowMs: nowMs);
   }
 
   void _onSky(SkySnapshot sky) {
@@ -192,7 +218,9 @@ final class SessionController extends ChangeNotifier {
   /// يعيد ضبط المحرك ويبدأ جلسة تجميع جديدة (للتكرارية).
   void resetEstimator() {
     _estimator.reset();
+    _arbiter.reset();
     _estimate = null;
+    _solution = null;
     _session++;
     _startedAt = DateTime.now();
     notifyListeners();
@@ -200,15 +228,15 @@ final class SessionController extends ChangeNotifier {
 
   /// يحفظ التقدير الحالي كنقطة مرقّمة؛ يعيد null إن لا تقدير.
   SavedPoint? savePoint() {
-    final e = _estimate;
-    if (e == null) return null;
+    final s = _solution;
+    if (s == null) return null;
     final p = SavedPoint(
       index: _saved.length + 1,
-      lat: e.lat,
-      lon: e.lon,
-      alt: e.alt,
-      sigmaM: e.sigmaM,
-      samples: e.samplesAveraged,
+      lat: s.lat,
+      lon: s.lon,
+      alt: s.alt,
+      sigmaM: s.sigmaM,
+      samples: s.source == FixSource.gnss ? (_estimate?.samplesAveraged ?? 0) : 0,
       time: DateTime.now(),
     );
     _saved.add(p);

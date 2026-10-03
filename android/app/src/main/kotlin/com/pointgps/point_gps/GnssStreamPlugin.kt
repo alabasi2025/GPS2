@@ -19,6 +19,14 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -57,6 +65,8 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
     private var rawSink: EventChannel.EventSink? = null
 
     private var listening = false
+    private var assistProvider: String? = null
+    private var fusedClient: FusedLocationProviderClient? = null
 
     init {
         EventChannel(messenger, "point_gps/fix").setStreamHandler(sinkHandler { fixSink = it })
@@ -135,18 +145,27 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
     private fun start(): Boolean {
         if (listening) return true
         if (!hasFineLocation()) return false
-        if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) return false
+        val gpsOn = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val anyOn = gpsOn || locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && locationManager.isLocationEnabled)
+        if (!anyOn) return false
 
         // أعلى معدل يسمح به النظام (عادة 1 Hz للحل، أسرع للقياسات الخام).
-        locationManager.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER, 0L, 0f, locationListener, Looper.getMainLooper(),
-        )
+        if (gpsOn) {
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER, 0L, 0f, locationListener, Looper.getMainLooper(),
+            )
+        }
         // آخر حل معروف فوراً (حتى لا تبقى الشاشة فارغة حتى أول حل جديد).
         locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { last ->
             if (System.currentTimeMillis() - last.time < 120_000L) {
-                mainHandler.post { fixSink?.success(last.toMap().plus("stale" to true)) }
+                mainHandler.post { fixSink?.success(last.toMap().plus("source" to "gnss")) }
             }
         }
+        // مصدر ثانٍ (الأساس): Fused Location Provider من Google Play Services —
+        // GPS + Wi-Fi + خلوي + حساسات. هو ما يستخدمه WhatsApp وFind My Device،
+        // وهو شبكة الأمان داخل المباني. إن غابت Play Services → NETWORK_PROVIDER.
+        startAssist()
         locationManager.registerGnssStatusCallback(statusCallback, mainHandler)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             locationManager.registerGnssMeasurementsCallback(measurementsCallback, mainHandler)
@@ -158,6 +177,9 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
     private fun stop() {
         if (!listening) return
         locationManager.removeUpdates(locationListener)
+        runCatching { locationManager.removeUpdates(assistListener) }
+        runCatching { fusedClient?.removeLocationUpdates(fusedCallback) }
+        fusedClient = null
         locationManager.unregisterGnssStatusCallback(statusCallback)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             locationManager.unregisterGnssMeasurementsCallback(measurementsCallback)
@@ -170,6 +192,7 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
         caps["sdk"] = Build.VERSION.SDK_INT
         caps["model"] = "${Build.MANUFACTURER} ${Build.MODEL}"
         caps["gpsEnabled"] = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        caps["assistProvider"] = assistProvider
         caps["hasFinePermission"] = hasFineLocation()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             caps["hardwareModelName"] = locationManager.gnssHardwareModelName
@@ -185,7 +208,7 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            fixSink?.success(location.toMap())
+            fixSink?.success(location.toMap().plus("source" to "gnss"))
         }
         @Deprecated("Deprecated in Java")
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
@@ -193,6 +216,63 @@ class GnssStreamPlugin(private val context: Context, messenger: BinaryMessenger)
         override fun onProviderDisabled(provider: String) {
             fixSink?.success(mapOf("event" to "providerDisabled"))
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startAssist() {
+        val gms = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context)
+        if (gms == ConnectionResult.SUCCESS) {
+            assistProvider = "fused(gms)"
+            val client = LocationServices.getFusedLocationProviderClient(context)
+            fusedClient = client
+            val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+                .setMinUpdateIntervalMillis(500L)
+                .setWaitForAccurateLocation(false)
+                .build()
+            client.requestLocationUpdates(req, fusedCallback, Looper.getMainLooper())
+            // آخر موقع معروف فوراً (نفس ما يفعله WhatsApp قبل أول حل جديد).
+            client.lastLocation.addOnSuccessListener { last ->
+                if (last != null && System.currentTimeMillis() - last.time < 300_000L) {
+                    fixSink?.success(last.toMap().plus("source" to "assist"))
+                }
+            }
+            // حل طازج عالي الدقة مرة واحدة لتسريع أول عرض.
+            client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener { loc ->
+                if (loc != null) fixSink?.success(loc.toMap().plus("source" to "assist"))
+            }
+            return
+        }
+        // بديل بلا Google: مزوّد الشبكة (Wi-Fi/خلوي) من النظام.
+        if (locationManager.allProviders.contains(LocationManager.NETWORK_PROVIDER)) {
+            assistProvider = "network"
+            runCatching {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER, 1000L, 0f, assistListener, Looper.getMainLooper(),
+                )
+                locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)?.let { last ->
+                    if (System.currentTimeMillis() - last.time < 300_000L) {
+                        mainHandler.post { fixSink?.success(last.toMap().plus("source" to "assist")) }
+                    }
+                }
+            }
+        }
+    }
+
+    private val fusedCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            val loc = result.lastLocation ?: return
+            fixSink?.success(loc.toMap().plus("source" to "assist"))
+        }
+    }
+
+    private val assistListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            fixSink?.success(location.toMap().plus("source" to "assist"))
+        }
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+        override fun onProviderEnabled(provider: String) = Unit
+        override fun onProviderDisabled(provider: String) = Unit
     }
 
     private val statusCallback = object : GnssStatus.Callback() {

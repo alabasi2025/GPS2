@@ -80,7 +80,18 @@ class SkySheet extends StatelessWidget {
                       if (raw.agcMeanDb != null)
                         _kv('AGC (تشويش إن انخفض فجأة)', '${raw.agcMeanDb!.toStringAsFixed(1)} dB'),
                     ],
-                    _kv('عينات مستلمة / مرفوضة', '${c.fixCount} / ${est?.rejectedOutliers ?? 0}'),
+                    _kv('عينات GNSS / مرفوضة', '${c.fixCount} / ${est?.rejectedOutliers ?? 0}'),
+                    _kv('عينات المدمج (Fused)', '${c.assistCount}'),
+                    if (c.solution != null)
+                      _kv(
+                        'المصدر المعروض',
+                        c.solution!.source == FixSource.gnss ? 'GNSS (أقمار مباشرة)' : 'مدمج (Wi-Fi/خلوي/GPS)',
+                        color: c.solution!.source == FixSource.gnss ? AppTheme.good : AppTheme.accent,
+                      ),
+                    if (c.solution?.gnssDisagreementM != null)
+                      _kv('فرق GNSS عن المدمج', Fmt.meters(c.solution!.gnssDisagreementM!)),
+                    if (c.lastAssist?.accuracyM != null)
+                      _kv('دقة المدمج (68%)', '±${Fmt.metersShort(c.lastAssist!.accuracyM!)} م'),
                     _kv('الجلسة', '#${c.session}'),
                   ],
                 ),
@@ -129,6 +140,7 @@ class SkySheet extends StatelessWidget {
                       if (caps.yearOfHardware != null) _kv('جيل العتاد', '${caps.yearOfHardware}'),
                       if (caps.hasMeasurements != null)
                         _kv('قياسات خام', caps.hasMeasurements! ? 'مدعومة' : 'غير مدعومة'),
+                      if (caps.assistProvider != null) _kv('مزوّد المدمج', caps.assistProvider!, ltr: true),
                     ],
                   ),
                 ),

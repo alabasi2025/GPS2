@@ -65,3 +65,8 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Fused Location Provider — نفس المصدر الذي يستخدمه WhatsApp/Find My Device.
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+}

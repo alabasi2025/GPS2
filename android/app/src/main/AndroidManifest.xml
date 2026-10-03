@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- GNSS فقط؛ لا نطلب الموقع التقريبي ولا الخلفية. -->
+    <!-- موقع دقيق (GNSS) + تقريبي (مزوّد الشبكة كشبكة أمان داخل المباني). لا خلفية. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <!-- خريطة OSM (بلاطات) ومشاركة الروابط. التطبيق يعمل بلا إنترنت عدا البلاطات. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="true"/>

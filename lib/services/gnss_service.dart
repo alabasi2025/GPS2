@@ -17,6 +17,7 @@ final class GnssCapabilities {
     this.hardwareModelName,
     this.yearOfHardware,
     this.hasMeasurements,
+    this.assistProvider,
   });
 
   factory GnssCapabilities.fromMap(Map<Object?, Object?> m) => GnssCapabilities(
@@ -27,6 +28,7 @@ final class GnssCapabilities {
         hardwareModelName: m['hardwareModelName'] as String?,
         yearOfHardware: (m['yearOfHardware'] as num?)?.toInt(),
         hasMeasurements: m['hasMeasurements'] as bool?,
+        assistProvider: m['assistProvider'] as String?,
       );
 
   final int sdk;
@@ -36,6 +38,7 @@ final class GnssCapabilities {
   final String? hardwareModelName;
   final int? yearOfHardware;
   final bool? hasMeasurements;
+  final String? assistProvider;
 }
 
 /// ملخص القياسات الخام (للتشخيص فقط).

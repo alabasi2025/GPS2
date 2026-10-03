@@ -6,7 +6,7 @@ Mahalanobis، ويجمّع العينات أثناء السكون بمتوسط �
 **صادقة** (95%) ويسجّل كل شيء في CSV حتى تختبر الدقة بنفسك.
 
 - الحزمة: `com.pointgps.location` · Android 8.0+ (API 26) · **arm64-v8a فقط**
-- مجاني بالكامل: خرائط OpenStreetMap، لا مفاتيح، لا خوادم، لا تتبع.
+- مجاني بالكامل: خرائط OpenStreetMap، Google Play Services للموقع المدمج (مجاني، لا مفتاح)، لا خوادم، لا تتبع.
 
 ## ما الذي تتوقعه فعلاً (بصدق)
 
@@ -15,7 +15,7 @@ Mahalanobis، ويجمّع العينات أثناء السكون بمتوسط �
 | واقف 60 ث سماء مفتوحة، هاتف L5 | 3–5 م | **≈ 1 م أو أقل** |
 | واقف 60 ث، هاتف L1 فقط | 5–8 م | 1.5–3 م |
 | يمشي 1.4 م/ث | 5–10 م + تأخّر | 2–3 م بلا تأخّر (Doppler) |
-| بين مبانٍ عالية | 10–30 م | أفضل، لكن لا معجزات — الدائرة تكبر بصدق |
+| داخل البيت / بين مبانٍ | 10–30 م (Wi-Fi) | **نفس WhatsApp تماماً** — يُعرض Fused مع تنبيه «اخرج لسماء مفتوحة» |
 
 سنتيمترات؟ **مستحيل بدون محطة RTK قاعدية** — لا يدّعي التطبيق ذلك. الحد الأدنى
 للعرض 0.5 م حتى لو قال الحساب أقل.
@@ -23,23 +23,24 @@ Mahalanobis، ويجمّع العينات أثناء السكون بمتوسط �
 ## كيف يعمل (مختصر تقني)
 
 ```
-Android LocationManager.GPS_PROVIDER  ──►  GnssFix (lat, lon, acc, speed, bearing, t)
-GnssStatus (C/N0, تردد الحامل ⇒ L1/L5)   ──►  SkySnapshot
-GnssMeasurementsEvent (ADR, AGC)         ──►  RawSummary (تشخيص)
-                     │
-                     ▼
-PositionEstimator (Dart خالص، مختبر وحدوياً)
-  • إطار ENU محلي على WGS-84 (خطّي بالكامل)
-  • Kalman [e, n, ve, vn] — ضوضاء عملية تتكيّف مع الحركة
-  • قياس Doppler للسرعة (دقة 0.1–0.3 م/ث ⇒ لا تأخّر عند التوقف)
-  • بوابة χ²(2) = 5.991 عند السكون، ×3 أثناء الحركة؛ 5 رفضات متتالية ⇒ إعادة تهيئة
-  • كشف سكون: سرعة + اختبار إزاحة إحصائي يتبع الضوضاء الفعلية
-  • أثناء السكون: متوسط موزون 1/σ²، σ_avg = 1.6/√Σw (عامل الارتباط الزمني)
-  • دقة الشريحة × 1.5 (Barbeau 2019: متفائلة ~32% من الوقت)
+Fused Location Provider (Google Play Services, HIGH_ACCURACY)   ─► الحل الأساسي فوراً
+  GPS + Wi-Fi + خلوي + حساسات — نفس مصدر WhatsApp / Find My Device   (داخل المباني يُعرض كما هو)
+                                                                  │
+LocationManager.GPS_PROVIDER + GnssStatus + GnssMeasurements      │
+  ─► PositionEstimator (Kalman + Doppler + تجميع ثابت)  ──────────┤
+                                                                  ▼
+                                               SolutionArbiter — يختار ما يُعرض:
+  • GNSS متسق مع Fused (≤ 2.5·σ مشتركة) وأدق منه و≥5 أقمار  ⇒ GNSS (≈1 م في العراء)
+  • غير ذلك (انعكاسات داخل مبنى، أقمار قليلة)                ⇒ Fused بدقته (لا أسوأ من WhatsApp أبداً)
+  • هستيرية 3 عينات قبل الرجوع إلى GNSS؛ Fused أقدم من 15 ث يُهمل
 ```
 
-المصادر: Google I/O 2018 *How to get one-meter location accuracy*؛ Barbeau،
-*Android GNSS accuracy*؛ Groves، *Principles of GNSS*؛ Google Smartphone Decimeter Challenge.
+**لماذا ليس GNSS فقط؟** Google (I/O 2018، Frank van Diggelen): GPS في العراء ≈ 5 م ولا يعمل
+داخل المباني؛ Wi-Fi عبر Fused يعطي < 10 م داخلها. **ولماذا ليس Fused فقط؟** لأنه لا يتجاوز
+3–5 م في العراء، والتجميع الثابت على GNSS الخام يصل تحت المتر.
+
+المحرك: إطار ENU على WGS-84؛ Kalman [e, n, ve, vn]؛ قياس Doppler للسرعة؛ بوابة χ²(2)=5.991؛
+متوسط موزون 1/σ² مع σ_avg = 1.6/√Σw؛ دقة الشريحة ×1.5 (Barbeau 2019).
 
 ## منهجية الاختبار (3 مستويات)
 

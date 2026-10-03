@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../engine/models.dart';
+import '../engine/solution_arbiter.dart';
 import '../services/session_controller.dart';
 import 'format.dart';
 import 'sky_sheet.dart';
@@ -43,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onUpdate() {
-    final e = c.estimate;
+    final e = c.solution;
     if (_follow && _mapReady && e != null) {
       _map.move(LatLng(e.lat, e.lon), _zoom);
     }
@@ -53,21 +54,22 @@ class _HomeScreenState extends State<HomeScreen> {
   // ----------------------------------------------------------------- أفعال
 
   Future<void> _share() async {
-    final e = c.estimate;
+    final e = c.solution;
     if (e == null) return;
     final txt = StringBuffer()
       ..writeln('موقعي (نقطة):')
       ..writeln(Fmt.googleMapsUrl(e.lat, e.lon))
       ..writeln('${Fmt.coord(e.lat)}, ${Fmt.coord(e.lon)}')
       ..write('الدقة ±${Fmt.metersShort(e.radius95M)} م (95%)');
-    if (e.motion == MotionState.stationary && e.samplesAveraged > 0) {
-      txt.write(' — متوسط ${e.samplesAveraged} عينة');
+    final est = c.estimate;
+    if (e.source == FixSource.gnss && est != null && est.samplesAveraged > 0) {
+      txt.write(' — GNSS، متوسط ${est.samplesAveraged} عينة');
     }
     await Share.share(txt.toString(), subject: 'موقعي');
   }
 
   Future<void> _openInMaps() async {
-    final e = c.estimate;
+    final e = c.solution;
     if (e == null) return;
     final geo = Uri.parse(Fmt.geoUri(e.lat, e.lon, label: 'نقطة'));
     if (!await launchUrl(geo)) {
@@ -76,7 +78,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _copy() async {
-    final e = c.estimate;
+    final e = c.solution;
     if (e == null) return;
     await Clipboard.setData(ClipboardData(text: '${Fmt.coord(e.lat)}, ${Fmt.coord(e.lon)}'));
     _toast('نُسخت الإحداثيات');
@@ -157,14 +159,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMap() {
-    final e = c.estimate;
-    final raw = c.lastFix;
-    final center = e != null ? LatLng(e.lat, e.lon) : const LatLng(15.3694, 44.1910);
+    final sol = c.solution;
+    final est = c.estimate;
+    final center = sol != null ? LatLng(sol.lat, sol.lon) : const LatLng(15.3694, 44.1910);
+    final color = sol == null ? AppTheme.textLo : AppTheme.accuracyColor(sol.sigmaM);
     return FlutterMap(
       mapController: _map,
       options: MapOptions(
         initialCenter: center,
-        initialZoom: e != null ? 18 : 5,
+        initialZoom: sol != null ? 18 : 5,
         maxZoom: 20,
         minZoom: 3,
         backgroundColor: AppTheme.bg,
@@ -185,26 +188,26 @@ class _HomeScreenState extends State<HomeScreen> {
           panBuffer: 1,
           evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
         ),
-        if (e != null)
+        if (sol != null)
           CircleLayer(
             circles: [
-              // الخام (رمادي) للمقارنة
-              if (raw?.accuracyM != null)
+              // GNSS المُرشَّح (رمادي) عندما لا يكون هو المعروض — للمقارنة والتشخيص.
+              if (sol.source == FixSource.assist && est != null)
                 CircleMarker(
-                  point: LatLng(raw!.lat, raw.lon),
-                  radius: raw.accuracyM!,
+                  point: LatLng(est.lat, est.lon),
+                  radius: est.radius95M,
                   useRadiusInMeter: true,
-                  color: Colors.white.withValues(alpha: 0.06),
-                  borderColor: Colors.white.withValues(alpha: 0.35),
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderColor: Colors.white.withValues(alpha: 0.3),
                   borderStrokeWidth: 1,
                 ),
-              // دائرة الثقة 95% الصادقة
+              // دائرة الثقة 95% للحل المعروض
               CircleMarker(
-                point: LatLng(e.lat, e.lon),
-                radius: e.radius95M,
+                point: LatLng(sol.lat, sol.lon),
+                radius: sol.radius95M,
                 useRadiusInMeter: true,
-                color: AppTheme.accuracyColor(e.sigmaM).withValues(alpha: 0.18),
-                borderColor: AppTheme.accuracyColor(e.sigmaM),
+                color: color.withValues(alpha: 0.18),
+                borderColor: color,
                 borderStrokeWidth: 2,
               ),
             ],
@@ -221,14 +224,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
-        if (e != null)
+        if (sol != null)
           MarkerLayer(
             markers: [
               Marker(
-                point: LatLng(e.lat, e.lon),
+                point: LatLng(sol.lat, sol.lon),
                 width: 28,
                 height: 28,
-                child: PositionDot(motion: e.motion, stale: c.isStale),
+                child: PositionDot(
+                  motion: sol.source == FixSource.gnss ? (est?.motion ?? MotionState.unknown) : MotionState.unknown,
+                  stale: c.isStale && sol.source == FixSource.gnss,
+                ),
               ),
             ],
           ),
@@ -243,7 +249,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTopBar() {
     final sky = c.sky;
-    final e = c.estimate;
+    final sol = c.solution;
+    final e = sol != null && sol.source == FixSource.gnss ? c.estimate : null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Row(
@@ -306,7 +313,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBottomPanel() {
-    final e = c.estimate;
+    final sol = c.solution;
+    final est = c.estimate;
     final raw = c.lastFix;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -320,14 +328,19 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (e == null)
+          if (sol == null)
             _AcquiringRow(sky: c.sky, ttffMs: c.ttffMs)
           else ...[
-            AccuracyHeader(estimate: e, rawAccuracyM: raw?.accuracyM, stale: c.isStale),
+            SolutionHeader(
+              solution: sol,
+              gnssSigmaM: est?.sigmaM,
+              rawAccuracyM: raw?.accuracyM,
+              stale: c.isStale && sol.source == FixSource.gnss,
+            ),
             const SizedBox(height: 10),
-            _CoordRow(e: e, onCopy: _copy),
+            _CoordRow(lat: sol.lat, lon: sol.lon, onCopy: _copy),
             const SizedBox(height: 10),
-            _StatsRow(e: e, sky: c.sky, fixCount: c.fixCount),
+            _StatsRow(sol: sol, est: est, sky: c.sky, fixCount: c.fixCount),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -395,7 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       _ => (
           Icons.gps_off_rounded,
-          'الموقع (GPS) مغلق',
+          'الموقع مغلق',
           'شغّل الموقع من الإعدادات واختر وضع «دقة عالية».',
           'فتح إعدادات الموقع',
           c.openLocationSettings,
@@ -463,9 +476,10 @@ class _AcquiringRow extends StatelessWidget {
 }
 
 class _CoordRow extends StatelessWidget {
-  const _CoordRow({required this.e, required this.onCopy});
+  const _CoordRow({required this.lat, required this.lon, required this.onCopy});
 
-  final PositionEstimate e;
+  final double lat;
+  final double lon;
   final VoidCallback onCopy;
 
   @override
@@ -482,7 +496,7 @@ class _CoordRow extends StatelessWidget {
               child: Directionality(
                 textDirection: TextDirection.ltr,
                 child: Text(
-                  '${Fmt.coord(e.lat)}, ${Fmt.coord(e.lon)}',
+                  '${Fmt.coord(lat)}, ${Fmt.coord(lon)}',
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 15, color: AppTheme.textHi),
                   textAlign: TextAlign.left,
                 ),
@@ -497,15 +511,17 @@ class _CoordRow extends StatelessWidget {
 }
 
 class _StatsRow extends StatelessWidget {
-  const _StatsRow({required this.e, required this.sky, required this.fixCount});
+  const _StatsRow({required this.sol, required this.est, required this.sky, required this.fixCount});
 
-  final PositionEstimate e;
+  final DisplaySolution sol;
+  final PositionEstimate? est;
   final SkySnapshot sky;
   final int fixCount;
 
   @override
   Widget build(BuildContext context) {
     final cn0 = sky.meanCn0Used;
+    final gnssShown = sol.source == FixSource.gnss;
     return Row(
       children: [
         StatTile(label: 'أقمار', value: '${sky.usedInFix}', sub: 'من ${sky.visible}'),
@@ -517,15 +533,15 @@ class _StatsRow extends StatelessWidget {
         ),
         StatTile(
           label: 'متوسط',
-          value: e.samplesAveraged > 0 ? '${e.samplesAveraged}' : '—',
+          value: gnssShown && est != null && est!.samplesAveraged > 0 ? '${est!.samplesAveraged}' : '—',
           sub: 'عينة',
         ),
         StatTile(
           label: 'ارتفاع',
-          value: e.alt != null ? e.alt!.round().toString() : '—',
+          value: sol.alt != null ? sol.alt!.round().toString() : '—',
           sub: 'م',
         ),
-        StatTile(label: 'مرفوض', value: '${e.rejectedOutliers}', sub: 'من $fixCount'),
+        StatTile(label: 'مرفوض', value: '${est?.rejectedOutliers ?? 0}', sub: 'من $fixCount'),
       ],
     );
   }

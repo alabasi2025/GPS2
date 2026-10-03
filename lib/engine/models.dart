@@ -12,6 +12,7 @@ final class GnssFix {
     this.speedAccuracyMps,
     this.bearingDeg,
     this.isMock = false,
+    this.source = FixSource.gnss,
   });
 
   factory GnssFix.fromMap(Map<Object?, Object?> m) {
@@ -28,6 +29,7 @@ final class GnssFix {
       timeMs: (m['timeMs'] as num).toInt(),
       elapsedNs: (m['elapsedNs'] as num).toInt(),
       isMock: m['mock'] == true,
+      source: m['source'] == 'assist' ? FixSource.assist : FixSource.gnss,
     );
   }
 
@@ -48,7 +50,13 @@ final class GnssFix {
   /// ساعة monotonic بالنانو ثانية — المرجع الصحيح لفروق الزمن.
   final int elapsedNs;
   final bool isMock;
+
+  /// مصدر الحل: GNSS صافٍ أو مدمج (Wi-Fi/خلوي/GPS كما يراه النظام).
+  final FixSource source;
 }
+
+/// مصدر حل الموقع.
+enum FixSource { gnss, assist }
 
 /// قمر واحد من `GnssStatus`.
 final class SatelliteInfo {
