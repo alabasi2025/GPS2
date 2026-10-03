@@ -1,0 +1,38 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    missing_return: error
+    dead_code: warning
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_const_declarations: true
+    prefer_final_locals: true
+    prefer_final_fields: true
+    prefer_final_in_for_each: true
+    avoid_print: true
+    avoid_dynamic_calls: true
+    avoid_catches_without_on_clauses: true
+    avoid_slow_async_io: true
+    cancel_subscriptions: true
+    close_sinks: true
+    unawaited_futures: true
+    use_build_context_synchronously: true
+    always_declare_return_types: true
+    unnecessary_lambdas: true
+    unnecessary_await_in_return: true
+    sized_box_for_whitespace: true
+    use_colored_box: true
+    use_decorated_box: true
+    avoid_unnecessary_containers: true
+    directives_ordering: true
+    sort_constructors_first: true
+    require_trailing_commas: true
+    public_member_api_docs: false
