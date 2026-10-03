@@ -11,15 +11,18 @@ import 'package:url_launcher/url_launcher.dart';
 import '../engine/models.dart';
 import '../engine/solution_arbiter.dart';
 import '../services/session_controller.dart';
+import '../services/update_service.dart';
 import 'format.dart';
 import 'sky_sheet.dart';
 import 'theme.dart';
+import 'update_sheet.dart';
 import 'widgets.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({required this.controller, super.key});
+  const HomeScreen({required this.controller, required this.updates, super.key});
 
   final SessionController controller;
+  final UpdateService updates;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -129,6 +132,14 @@ class _HomeScreenState extends State<HomeScreen> {
     if (p == null) return;
     final d = c.lastTwoDistanceM;
     _toast(d == null ? 'حُفظت النقطة ${p.index}' : 'النقطة ${p.index} — المسافة عن السابقة: ${Fmt.meters(d)}');
+  }
+
+  void _showUpdate({bool auto = false}) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => UpdateSheet(service: widget.updates, autoStart: auto),
+    );
   }
 
   void _showSky() {
@@ -322,6 +333,28 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const Spacer(),
+          ListenableBuilder(
+            listenable: widget.updates,
+            builder: (context, _) {
+              final has = widget.updates.hasUpdate;
+              return Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Badge(
+                  isLabelVisible: has,
+                  backgroundColor: AppTheme.warn,
+                  child: IconButton(
+                    tooltip: has ? 'تحديث متاح' : 'التحديث التلقائي',
+                    onPressed: () => _showUpdate(auto: has),
+                    icon: Icon(has ? Icons.system_update_rounded : Icons.autorenew_rounded),
+                    style: IconButton.styleFrom(
+                      backgroundColor: has ? AppTheme.warn : AppTheme.surfaceHi,
+                      foregroundColor: has ? AppTheme.bg : AppTheme.textHi,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
           IconButton(
             tooltip: _follow ? 'التتبع مفعّل' : 'العودة لموقعي',
             onPressed: () {

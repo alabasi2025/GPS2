@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'services/session_controller.dart';
 import 'services/simulated_gnss_source.dart';
+import 'services/update_service.dart';
 import 'ui/home_screen.dart';
 import 'ui/theme.dart';
 
@@ -30,6 +31,7 @@ class PointGpsApp extends StatefulWidget {
 
 class _PointGpsAppState extends State<PointGpsApp> with WidgetsBindingObserver {
   late final SessionController _controller;
+  late final UpdateService _updates;
 
   @override
   void initState() {
@@ -37,6 +39,9 @@ class _PointGpsAppState extends State<PointGpsApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     // على الويب لا GNSS خام ولا قنوات Android → محاكاة واقعية للمعاينة فقط.
     _controller = SessionController(service: kIsWeb ? SimulatedGnssSource() : null);
+    _updates = UpdateService();
+    // فحص صامت عند الإقلاع (بلا تنزيل) حتى تظهر شارة «تحديث» إن وُجد.
+    if (!kIsWeb) WidgetsBinding.instance.addPostFrameCallback((_) => _updates.check());
     WidgetsBinding.instance.addPostFrameCallback((_) => _controller.init());
   }
 
@@ -49,6 +54,7 @@ class _PointGpsAppState extends State<PointGpsApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
+    _updates.dispose();
     super.dispose();
   }
 
@@ -69,7 +75,7 @@ class _PointGpsAppState extends State<PointGpsApp> with WidgetsBindingObserver {
         textDirection: TextDirection.rtl,
         child: child ?? const SizedBox.shrink(),
       ),
-      home: HomeScreen(controller: _controller),
+      home: HomeScreen(controller: _controller, updates: _updates),
     );
   }
 }

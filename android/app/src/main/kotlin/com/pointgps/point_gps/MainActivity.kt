@@ -5,10 +5,14 @@ import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : FlutterActivity() {
     private var gnss: GnssStreamPlugin? = null
+    private var updater: UpdateInstallerPlugin? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         gnss = GnssStreamPlugin(applicationContext, flutterEngine.dartExecutor.binaryMessenger).also {
+            it.activity = this
+        }
+        updater = UpdateInstallerPlugin(applicationContext, flutterEngine.dartExecutor.binaryMessenger).also {
             it.activity = this
         }
     }
@@ -25,6 +29,8 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         gnss?.dispose()
         gnss = null
+        updater?.activity = null
+        updater = null
         super.onDestroy()
     }
 }

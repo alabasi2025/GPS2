@@ -1,5 +1,13 @@
 # نقطة — Point GPS
 
+[![release](https://github.com/alabasi2025/GPS2/actions/workflows/release.yml/badge.svg)](https://github.com/alabasi2025/GPS2/actions/workflows/release.yml)
+[![latest](https://img.shields.io/github/v/release/alabasi2025/GPS2?label=%D8%A2%D8%AE%D8%B1%20%D8%A5%D8%B5%D8%AF%D8%A7%D8%B1)](https://github.com/alabasi2025/GPS2/releases/latest)
+
+**التثبيت:** حمّل الـAPK من [آخر إصدار](https://github.com/alabasi2025/GPS2/releases/latest). بعدها لا تحتاج هذه الصفحة —
+زر **«تحديث تلقائي»** داخل التطبيق يجلب كل إصدار جديد ويثبّته (مع تحقق SHA‑256).
+
+**التوثيق الكامل:** [docs/](docs/README.md) — الأسرار، مسار الإصدار، المعمارية، البحث، الاختبار.
+
 تطبيق Android يحدّد موقعك بأعلى دقة يمكن لهاتف أن يصل إليها **بدون أي خدمة مدفوعة**:
 يقرأ حل GNSS الصافي من الشريحة (لا Fused/Wi-Fi)، يرشّحه بمرشّح Kalman مع بوابة
 Mahalanobis، ويجمّع العينات أثناء السكون بمتوسط موزون بعكس التباين. يعرض دائرة ثقة

@@ -1,7 +1,7 @@
 name: point_gps
 description: "نقطة — تحديد الموقع بأعلى دقة ممكنة من الهاتف (GNSS خام، L1+L5، Kalman، تجميع ثابت)."
 publish_to: 'none'
-version: 1.2.0+4
+version: 1.3.0+4
 
 environment:
   sdk: ^3.9.0
@@ -21,6 +21,12 @@ dependencies:
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3
   intl: ^0.20.2
+  # تحديث ذاتي من GitHub Releases
+  http: ^1.5.0
+  crypto: ^3.0.6
+  convert: ^3.1.2
+  # مستشعرات الحركة (PDR)
+  sensors_plus: ^6.1.1
 
 dev_dependencies:
   flutter_test:

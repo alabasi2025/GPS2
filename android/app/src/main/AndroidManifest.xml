@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <!-- خريطة OSM (بلاطات) ومشاركة الروابط. التطبيق يعمل بلا إنترنت عدا البلاطات. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- تثبيت تحديث التطبيق من Release في GitHub (المستخدم يوافق على كل تثبيت) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- اتجاه الجهاز بمعدل عالٍ (Fused Orientation Provider) -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="true"/>
 
     <application
@@ -34,6 +39,15 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
     <queries>
         <intent>
