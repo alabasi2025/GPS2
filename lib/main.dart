@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'services/session_controller.dart';
+import 'services/simulated_gnss_source.dart';
 import 'ui/home_screen.dart';
 import 'ui/theme.dart';
 
@@ -33,7 +35,8 @@ class _PointGpsAppState extends State<PointGpsApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _controller = SessionController();
+    // على الويب لا GNSS خام ولا قنوات Android → محاكاة واقعية للمعاينة فقط.
+    _controller = SessionController(service: kIsWeb ? SimulatedGnssSource() : null);
     WidgetsBinding.instance.addPostFrameCallback((_) => _controller.init());
   }
 

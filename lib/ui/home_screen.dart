@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -147,6 +148,17 @@ class _HomeScreenState extends State<HomeScreen> {
           SafeArea(
             child: Column(
               children: [
+                if (kIsWeb)
+                  Container(
+                    width: double.infinity,
+                    color: AppTheme.warn,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: const Text(
+                      'معاينة ويب — بيانات محاكاة (داخل مبنى → خروج → سماء مفتوحة)',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppTheme.bg, fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ),
                 _buildTopBar(),
                 const Spacer(),
                 if (phase == SessionPhase.acquiring || phase == SessionPhase.tracking) _buildBottomPanel(),

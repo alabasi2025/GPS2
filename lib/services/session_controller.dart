@@ -40,12 +40,12 @@ final class SavedPoint {
 /// `notifyListeners` يُستدعى مرة واحدة لكل حل (1 Hz) — لا إعادة بناء عند
 /// كل تحديث أقمار (قد تصل 10 Hz) إلا إذا تغيّر العدد المستخدم.
 final class SessionController extends ChangeNotifier {
-  SessionController({GnssService? service, PositionEstimator? estimator, SolutionArbiter? arbiter})
+  SessionController({GnssSource? service, PositionEstimator? estimator, SolutionArbiter? arbiter})
       : _service = service ?? GnssService(),
         _estimator = estimator ?? PositionEstimator(),
         _arbiter = arbiter ?? SolutionArbiter();
 
-  final GnssService _service;
+  final GnssSource _service;
   final PositionEstimator _estimator;
   final SolutionArbiter _arbiter;
   final CsvLogger _logger = CsvLogger();
